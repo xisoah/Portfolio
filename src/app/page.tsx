@@ -1,0 +1,25 @@
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import Hero from "@/components/sections/Hero";
+import Experience from "@/components/sections/Experience";
+import Skills from "@/components/sections/Skills";
+import Projects from "@/components/sections/Projects";
+import Education from "@/components/sections/Education";
+import Contact from "@/components/sections/Contact";
+
+export default function Home() {
+  return (
+    <div>
+      <Navbar />
+      <main>
+        <Hero />
+        <Experience />
+        <Skills />
+        <Projects />
+        <Education />
+        <Contact />
+      </main>
+      <Footer />
+    </div>
+  );
+}
