@@ -8,7 +8,7 @@ export default function Contact() {
         <div className="p-5 rounded-lg border border-[var(--border)] bg-[var(--card)]">
           <h3 className="font-semibold mb-2">Get in touch</h3>
           <p className="text-sm text-[var(--color-muted)] mb-4">
-            I'd love to connect about security roles, VAPT engagements, or collaboration.
+            {"I'd love to connect about security roles, VAPT engagements, or collaboration."}
           </p>
           <form className="space-y-3" method="POST" action="https://formspree.io/f/your-id">
             <input name="name" required placeholder="Name" className="w-full px-3 py-2 rounded border border-[var(--border)] bg-transparent" />
