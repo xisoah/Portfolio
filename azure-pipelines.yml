@@ -1,0 +1,73 @@
+# azure-pipelines.yml
+
+# Run on pushes to master and feature branches, and on PRs into master
+trigger:
+  branches:
+    include:
+      - master
+      - feature/*
+pr:
+  branches:
+    include:
+      - master
+
+# Use your self-hosted Ubuntu agent pool
+pool:
+  name: Default   # <- confirmed from .agent
+
+variables:
+  NODE_VERSION: '20.x'
+  NPM_CACHE_DIR: '$(Pipeline.Workspace)/.npm'
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+
+  # Ensure Node 20.x is available on the agent
+  - task: NodeTool@0
+    displayName: 'Use Node.js $(NODE_VERSION)'
+    inputs:
+      versionSpec: '$(NODE_VERSION)'
+
+  # Configure npm cache to speed up installs
+  - script: |
+      npm config set cache "$(NPM_CACHE_DIR)"
+      echo "Using npm cache at: $(NPM_CACHE_DIR)"
+    displayName: 'Configure npm cache directory'
+
+  # Cache npm downloads (uses lockfile if present)
+  - task: Cache@2
+    displayName: 'Restore npm cache'
+    inputs:
+      key: 'npm | "$(Agent.OS)" | package-lock.json'
+      restoreKeys: |
+        npm | "$(Agent.OS)"
+        npm
+      path: '$(NPM_CACHE_DIR)'
+
+  # Install dependencies (prefer reproducible 'ci' if lockfile exists)
+  - script: |
+      if [ -f package-lock.json ]; then
+        npm ci
+      else
+        npm install
+      fi
+    displayName: 'Install dependencies'
+
+  # Lint (uses your "lint" script, won’t fail if missing later)
+  - script: |
+      npm run lint --if-present
+    displayName: 'Run lint'
+
+  # Build Next.js (creates .next)
+  - script: |
+      npm run build
+    displayName: 'Build Next.js'
+
+  # Publish the compiled output so you can download/inspect it
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish .next as artifact'
+    inputs:
+      PathtoPublish: '.next'
+      ArtifactName: 'next-build'
+      publishLocation: 'Container'
