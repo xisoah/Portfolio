@@ -1,73 +1,179 @@
-# azure-pipelines.yml
+# # azure-pipelines.yml
 
-# Run on pushes to master and feature branches, and on PRs into master
+# # Run on pushes to master and feature branches, and on PRs into master
+# trigger:
+#   branches:
+#     include:
+#       - master
+#       - feature/*
+# pr:
+#   branches:
+#     include:
+#       - master
+
+# # Use your self-hosted Ubuntu agent pool
+# pool:
+#   name: Default   # <- confirmed from .agent
+
+# variables:
+#   NODE_VERSION: '20.x'
+#   NPM_CACHE_DIR: '$(Pipeline.Workspace)/.npm'
+
+# steps:
+#   - checkout: self
+#     fetchDepth: 0
+
+#   # Ensure Node 20.x is available on the agent
+#   - task: NodeTool@0
+#     displayName: 'Use Node.js $(NODE_VERSION)'
+#     inputs:
+#       versionSpec: '$(NODE_VERSION)'
+
+#   # Configure npm cache to speed up installs
+#   - script: |
+#       npm config set cache "$(NPM_CACHE_DIR)"
+#       echo "Using npm cache at: $(NPM_CACHE_DIR)"
+#     displayName: 'Configure npm cache directory'
+
+#   # Cache npm downloads (uses lockfile if present)
+#   - task: Cache@2
+#     displayName: 'Restore npm cache'
+#     inputs:
+#       key: 'npm | "$(Agent.OS)" | package-lock.json'
+#       restoreKeys: |
+#         npm | "$(Agent.OS)"
+#         npm
+#       path: '$(NPM_CACHE_DIR)'
+
+#   # Install dependencies (prefer reproducible 'ci' if lockfile exists)
+#   - script: |
+#       if [ -f package-lock.json ]; then
+#         npm ci
+#       else
+#         npm install
+#       fi
+#     displayName: 'Install dependencies'
+
+#   # Lint (uses your "lint" script, won’t fail if missing later)
+#   - script: |
+#       npm run lint --if-present
+#     displayName: 'Run lint'
+
+#   # Build Next.js (creates .next)
+#   - script: |
+#       npm run build
+#     displayName: 'Build Next.js'
+
+#   # Publish the compiled output so you can download/inspect it
+#   - task: PublishBuildArtifacts@1
+#     displayName: 'Publish .next as artifact'
+#     inputs:
+#       PathtoPublish: '.next'
+#       ArtifactName: 'next-build'
+#       publishLocation: 'Container'
+
 trigger:
-  branches:
-    include:
-      - master
-      - feature/*
+  branches: { include: [ master, uat ] }
 pr:
-  branches:
-    include:
-      - master
+  branches: { include: [ master ] }
 
-# Use your self-hosted Ubuntu agent pool
-pool:
-  name: Default   # <- confirmed from .agent
+stages:
+# ---------- BUILD ----------
+- stage: Build
+  jobs:
+  - job: Build
+    pool: { name: Default }              # your agent pool
+    variables:
+      NODE_VERSION: '20.x'
+      NPM_CACHE_DIR: '$(Pipeline.Workspace)/.npm'
+    steps:
+    - checkout: self
+      fetchDepth: 0
+    - task: NodeTool@0
+      inputs: { versionSpec: '$(NODE_VERSION)' }
+      displayName: Use Node $(NODE_VERSION)
+    - script: npm config set cache "$(NPM_CACHE_DIR)"
+      displayName: Configure npm cache
+    - task: Cache@2
+      displayName: Restore npm cache
+      inputs:
+        key: 'npm | "$(Agent.OS)" | package-lock.json'
+        restoreKeys: |
+          npm | "$(Agent.OS)"
+          npm
+        path: '$(NPM_CACHE_DIR)'
+    - script: |
+        if [ -f package-lock.json ]; then npm ci; else npm i; fi
+      displayName: Install deps
+    - script: npm run lint --if-present
+      displayName: Lint
+    - script: |
+        npm run build
+        rm -rf dist && mkdir -p dist/.next
+        # Flatten standalone layout into dist/
+        cp -r .next/standalone/* dist/
+        mkdir -p dist/.next/static
+        cp -r .next/static/* dist/.next/static/
+        [ -d public ] && cp -r public dist/public || true
+      displayName: Build & assemble standalone server
+    - script: |
+        tar -C dist -czf dist.tar.gz .
+      displayName: Pack artifact
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: dist.tar.gz
+        artifact: app
+      displayName: Publish artifact "app"
 
-variables:
-  NODE_VERSION: '20.x'
-  NPM_CACHE_DIR: '$(Pipeline.Workspace)/.npm'
+# ---------- DEPLOY UAT (auto on branch uat) ----------
+- stage: Deploy_UAT
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/uat'))
+  jobs:
+  - deployment: ToUAT
+    environment: 'uat'                     # create Environment "uat" in DevOps
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: app
+              path: '$(Pipeline.Workspace)'
+          - script: |
+              set -e
+              mkdir -p deploy && tar -xzf $(Pipeline.Workspace)/dist.tar.gz -C deploy
+              REL=/srv/portfolio-uat/releases/$(Build.BuildId)
+              sudo mkdir -p "$REL"
+              sudo rsync -a deploy/ "$REL"/
+              sudo ln -sfn "$REL" /srv/portfolio-uat/current
+              sudo systemctl restart portfolio-uat
+              # keep last 5 releases
+              sudo bash -lc 'cd /srv/portfolio-uat/releases && ls -1t | tail -n +6 | xargs -r rm -rf'
+            displayName: Deploy to UAT (local server)
 
-steps:
-  - checkout: self
-    fetchDepth: 0
-
-  # Ensure Node 20.x is available on the agent
-  - task: NodeTool@0
-    displayName: 'Use Node.js $(NODE_VERSION)'
-    inputs:
-      versionSpec: '$(NODE_VERSION)'
-
-  # Configure npm cache to speed up installs
-  - script: |
-      npm config set cache "$(NPM_CACHE_DIR)"
-      echo "Using npm cache at: $(NPM_CACHE_DIR)"
-    displayName: 'Configure npm cache directory'
-
-  # Cache npm downloads (uses lockfile if present)
-  - task: Cache@2
-    displayName: 'Restore npm cache'
-    inputs:
-      key: 'npm | "$(Agent.OS)" | package-lock.json'
-      restoreKeys: |
-        npm | "$(Agent.OS)"
-        npm
-      path: '$(NPM_CACHE_DIR)'
-
-  # Install dependencies (prefer reproducible 'ci' if lockfile exists)
-  - script: |
-      if [ -f package-lock.json ]; then
-        npm ci
-      else
-        npm install
-      fi
-    displayName: 'Install dependencies'
-
-  # Lint (uses your "lint" script, won’t fail if missing later)
-  - script: |
-      npm run lint --if-present
-    displayName: 'Run lint'
-
-  # Build Next.js (creates .next)
-  - script: |
-      npm run build
-    displayName: 'Build Next.js'
-
-  # Publish the compiled output so you can download/inspect it
-  - task: PublishBuildArtifacts@1
-    displayName: 'Publish .next as artifact'
-    inputs:
-      PathtoPublish: '.next'
-      ArtifactName: 'next-build'
-      publishLocation: 'Container'
+# ---------- DEPLOY PROD (approval) ----------
+- stage: Deploy_PROD
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+  jobs:
+  - deployment: ToPROD
+    environment: 'prod'                    # add approval on this Environment in DevOps
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: app
+              path: '$(Pipeline.Workspace)'
+          - script: |
+              set -e
+              mkdir -p deploy && tar -xzf $(Pipeline.Workspace)/dist.tar.gz -C deploy
+              REL=/srv/portfolio-prod/releases/$(Build.BuildId)
+              sudo mkdir -p "$REL"
+              sudo rsync -a deploy/ "$REL"/
+              sudo ln -sfn "$REL" /srv/portfolio-prod/current
+              sudo systemctl restart portfolio-prod
+              sudo bash -lc 'cd /srv/portfolio-prod/releases && ls -1t | tail -n +6 | xargs -r rm -rf'
+            displayName: Deploy to PROD (local server)
