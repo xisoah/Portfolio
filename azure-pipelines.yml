@@ -131,6 +131,7 @@ stages:
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/uat'))
   jobs:
   - deployment: ToUAT
+    pool: { name: Default }          
     environment: 'uat'                     # create Environment "uat" in DevOps
     strategy:
       runOnce:
@@ -158,6 +159,7 @@ stages:
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
   jobs:
   - deployment: ToPROD
+    pool: { name: Default }  
     environment: 'prod'                    # add approval on this Environment in DevOps
     strategy:
       runOnce:
