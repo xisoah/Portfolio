@@ -145,12 +145,13 @@ stages:
               set -e
               mkdir -p deploy && tar -xzf $(Pipeline.Workspace)/dist.tar.gz -C deploy
               REL=/srv/portfolio-uat/releases/$(Build.BuildId)
-              sudo mkdir -p "$REL"
-              sudo rsync -a deploy/ "$REL"/
-              sudo ln -sfn "$REL" /srv/portfolio-uat/current
+              mkdir -p "$REL"
+              rsync -a deploy/ "$REL"/
+              ln -sfn "$REL" /srv/portfolio-uat/current
               sudo systemctl restart portfolio-uat
               # keep last 5 releases
-              sudo bash -lc 'cd /srv/portfolio-uat/releases && ls -1t | tail -n +6 | xargs -r rm -rf'
+              cd /srv/portfolio-uat/releases
+              ls -1t | awk 'NR>5' | xargs -r rm -rf
             displayName: Deploy to UAT (local server)
 
 # ---------- DEPLOY PROD (approval) ----------
@@ -173,9 +174,12 @@ stages:
               set -e
               mkdir -p deploy && tar -xzf $(Pipeline.Workspace)/dist.tar.gz -C deploy
               REL=/srv/portfolio-prod/releases/$(Build.BuildId)
-              sudo mkdir -p "$REL"
-              sudo rsync -a deploy/ "$REL"/
-              sudo ln -sfn "$REL" /srv/portfolio-prod/current
+              mkdir -p "$REL"
+              rsync -a deploy/ "$REL"/
+              ln -sfn "$REL" /srv/portfolio-prod/current
               sudo systemctl restart portfolio-prod
-              sudo bash -lc 'cd /srv/portfolio-prod/releases && ls -1t | tail -n +6 | xargs -r rm -rf'
+                          
+              # keep last 5 releases
+              cd /srv/portfolio-prod/releases
+              ls -1t | awk 'NR>5' | xargs -r rm -rf
             displayName: Deploy to PROD (local server)
