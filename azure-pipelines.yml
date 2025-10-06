@@ -154,15 +154,19 @@ stages:
     steps:
     - checkout: self
       fetchDepth: 0
+      persistCredentials: true   # <— keep AzDO creds for subsequent git commands
 
     - script: |
         set -euo pipefail
 
+        # Use the pipeline OAuth token when talking to 'origin' (AzDO)
+        git -c http.extraHeader="Authorization: Bearer $(System.AccessToken)" \
+            fetch --prune --tags origin
+
         git config user.name  "$(GITHUB_USERNAME)"
         git config user.email "ci@xarb.me"
 
-        git fetch --prune --tags origin
-
+        # Add/refresh GitHub remote with token
         git remote remove github 2>/dev/null || true
         git remote add github "https://$(GITHUB_USERNAME):${GITHUB_TOKEN}@github.com/$(GITHUB_OWNER)/$(GITHUB_REPO).git"
 
@@ -175,6 +179,7 @@ stages:
       displayName: "Mirror branches & tags"
       env:
         GITHUB_TOKEN: $(GITHUB_TOKEN)
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
     - script: |
         set -euo pipefail
