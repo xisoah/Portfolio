@@ -141,3 +141,49 @@ stages:
               cd /srv/portfolio-prod/releases
               ls -1t | awk 'NR>5' | xargs -r rm -rf
             displayName: Deploy to PROD (local server)
+
+# ---------- MIRROR TO GITHUB (after successful Build; skip PR validations) ----------
+- stage: Mirror_GitHub
+  displayName: "Mirror code to GitHub"
+  dependsOn: Build
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - job: Mirror
+    displayName: "Push branches & tags to GitHub"
+    pool: { name: Default }
+    steps:
+    - checkout: self
+      fetchDepth: 0
+
+    - script: |
+        set -euo pipefail
+
+        git config user.name  "$(GITHUB_USERNAME)"
+        git config user.email "ci@xarb.me"
+
+        git fetch --prune --tags origin
+
+        git remote remove github 2>/dev/null || true
+        git remote add github "https://$(GITHUB_USERNAME):${GITHUB_TOKEN}@github.com/$(GITHUB_OWNER)/$(GITHUB_REPO).git"
+
+        echo "Pushing branches..."
+        git push github +refs/heads/*:refs/heads/* --prune
+        echo "Pushing tags..."
+        git push github +refs/tags/*:refs/tags/* --prune
+
+        echo "Mirror complete."
+      displayName: "Mirror branches & tags"
+      env:
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
+
+    - script: |
+        set -euo pipefail
+        if command -v git-lfs >/dev/null 2>&1; then
+          echo "Mirroring Git LFS objects..."
+          git lfs fetch --all origin || true
+          git lfs push  --all github || true
+        else
+          echo "git-lfs not installed on the agent; skipping LFS mirror."
+        fi
+      displayName: "Mirror Git LFS (optional)"
+      condition: succeeded()
