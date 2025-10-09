@@ -142,9 +142,9 @@ stages:
               ls -1t | awk 'NR>5' | xargs -r rm -rf
             displayName: Deploy to PROD (local server)
 
-# ---------- MIRROR TO GITHUB (after successful Build; skip PR validations) ----------
+# ---------- MIRROR TO GITHUB (full sync after successful build) ----------
 - stage: Mirror_GitHub
-  displayName: "Mirror code to GitHub"
+  displayName: "Mirror Azure → GitHub"
   dependsOn: Build
   condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
   jobs:
@@ -154,28 +154,32 @@ stages:
     steps:
     - checkout: self
       fetchDepth: 0
-      persistCredentials: true   # <— keep AzDO creds for subsequent git commands
+      persistCredentials: true
 
     - script: |
         set -euo pipefail
 
-        # Use the pipeline OAuth token when talking to 'origin' (AzDO)
-        git -c http.extraHeader="Authorization: Bearer $(System.AccessToken)" \
-            fetch --prune --tags origin
-
         git config user.name  "$(GITHUB_USERNAME)"
         git config user.email "ci@xarb.me"
 
-        # Add/refresh GitHub remote with token
+        # Fetch everything from Azure
+        git -c http.extraHeader="Authorization: Bearer $(System.AccessToken)" \
+            fetch --prune --tags origin
+
         git remote remove github 2>/dev/null || true
         git remote add github "https://$(GITHUB_USERNAME):${GITHUB_TOKEN}@github.com/$(GITHUB_OWNER)/$(GITHUB_REPO).git"
 
-        echo "Pushing branches..."
-        git push github +refs/heads/*:refs/heads/* --prune
-        echo "Pushing tags..."
-        git push github +refs/tags/*:refs/tags/* --prune
+        # Detect if GitHub repo is empty
+        if [ -z "$(git ls-remote --heads github)" ] && [ -z "$(git ls-remote --tags github)" ]; then
+          echo "GitHub repo appears empty — performing initial full mirror..."
+          git push github --mirror
+        else
+          echo "Syncing all branches and tags..."
+          git push github +refs/heads/*:refs/heads/* --prune
+          git push github +refs/tags/*:refs/tags/* --prune
+        fi
 
-        echo "Mirror complete."
+        echo "Mirror complete. Azure and GitHub are now identical."
       displayName: "Mirror branches & tags"
       env:
         GITHUB_TOKEN: $(GITHUB_TOKEN)
