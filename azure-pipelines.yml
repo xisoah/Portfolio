@@ -1,73 +1,207 @@
-# azure-pipelines.yml
-
-# Run on pushes to master and feature branches, and on PRs into master
 trigger:
-  branches:
-    include:
-      - master
-      - feature/*
+  branches: { include: [ master, uat ] }
 pr:
-  branches:
-    include:
-      - master
+  branches: { include: [ master ] }
 
-# Use your self-hosted Ubuntu agent pool
-pool:
-  name: Default   # <- confirmed from .agent
+stages:
+# ---------- BUILD ----------
+- stage: Build
+  jobs:
+  - job: Build
+    pool: { name: Default }
+    variables:
+      NODE_VERSION: '20.x'
+      NPM_CACHE_DIR: '$(Pipeline.Workspace)/.npm'
+    steps:
+    - checkout: self
+      fetchDepth: 0
 
-variables:
-  NODE_VERSION: '20.x'
-  NPM_CACHE_DIR: '$(Pipeline.Workspace)/.npm'
+    - task: NodeTool@0
+      inputs: { versionSpec: '$(NODE_VERSION)' }
+      displayName: Use Node $(NODE_VERSION)
 
-steps:
-  - checkout: self
-    fetchDepth: 0
+    - script: npm config set cache "$(NPM_CACHE_DIR)"
+      displayName: Configure npm cache
 
-  # Ensure Node 20.x is available on the agent
-  - task: NodeTool@0
-    displayName: 'Use Node.js $(NODE_VERSION)'
-    inputs:
-      versionSpec: '$(NODE_VERSION)'
+    - task: Cache@2
+      displayName: Restore npm cache
+      inputs:
+        key: 'npm | "$(Agent.OS)" | package-lock.json'
+        restoreKeys: |
+          npm | "$(Agent.OS)"
+          npm
+        path: '$(NPM_CACHE_DIR)'
 
-  # Configure npm cache to speed up installs
-  - script: |
-      npm config set cache "$(NPM_CACHE_DIR)"
-      echo "Using npm cache at: $(NPM_CACHE_DIR)"
-    displayName: 'Configure npm cache directory'
+    - script: |
+        if [ -f package-lock.json ]; then npm ci; else npm i; fi
+      displayName: Install deps
 
-  # Cache npm downloads (uses lockfile if present)
-  - task: Cache@2
-    displayName: 'Restore npm cache'
-    inputs:
-      key: 'npm | "$(Agent.OS)" | package-lock.json'
-      restoreKeys: |
-        npm | "$(Agent.OS)"
-        npm
-      path: '$(NPM_CACHE_DIR)'
+    - script: |
+        set -euxo pipefail
+        npm run build
 
-  # Install dependencies (prefer reproducible 'ci' if lockfile exists)
-  - script: |
-      if [ -f package-lock.json ]; then
-        npm ci
-      else
-        npm install
-      fi
-    displayName: 'Install dependencies'
+        # Prepare deployable standalone bundle
+        rm -rf dist
+        mkdir -p dist/.next
 
-  # Lint (uses your "lint" script, won’t fail if missing later)
-  - script: |
-      npm run lint --if-present
-    displayName: 'Run lint'
+        # 1) Standalone server (contains server.js and minimal node_modules)
+        rsync -a .next/standalone/ dist/
 
-  # Build Next.js (creates .next)
-  - script: |
-      npm run build
-    displayName: 'Build Next.js'
+        # 2) Runtime static assets
+        rsync -a .next/static/ dist/.next/static/
 
-  # Publish the compiled output so you can download/inspect it
-  - task: PublishBuildArtifacts@1
-    displayName: 'Publish .next as artifact'
-    inputs:
-      PathtoPublish: '.next'
-      ArtifactName: 'next-build'
-      publishLocation: 'Container'
+        # 3) REQUIRED marker for prod build
+        cp .next/BUILD_ID dist/.next/BUILD_ID
+
+        # 4) Optional public/ if referenced directly
+        if [ -d public ]; then rsync -a public/ dist/public/; fi
+
+        # Sanity checks to fail fast if packaging is wrong
+        test -f dist/server.js
+        test -f dist/.next/BUILD_ID
+        test -d dist/.next/static
+      displayName: Build & assemble standalone server
+
+    - script: |
+        tar -C dist -czf dist.tar.gz .
+      displayName: Pack artifact
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: dist.tar.gz
+        artifact: app
+      displayName: Publish artifact "app"
+
+# ---------- DEPLOY UAT (auto on branch uat) ----------
+- stage: Deploy_UAT
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/uat'))
+  jobs:
+  - deployment: ToUAT
+    pool: { name: Default }
+    environment: 'uat'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: app
+              path: '$(Pipeline.Workspace)'
+
+          - script: |
+              set -e
+              mkdir -p deploy
+              tar -xzf "$(Pipeline.Workspace)/dist.tar.gz" -C deploy
+
+              REL="/srv/portfolio-uat/releases/$(Build.BuildId)"
+              mkdir -p "$REL"
+              rsync -a deploy/ "$REL"/
+              ln -sfn "$REL" /srv/portfolio-uat/current
+
+              # only command needing sudo (NOPASSWD configured)
+              sudo -n systemctl restart portfolio-uat
+
+              # keep last 5 releases
+              cd /srv/portfolio-uat/releases
+              ls -1t | awk 'NR>5' | xargs -r rm -rf
+            displayName: Deploy to UAT (local server)
+
+# ---------- DEPLOY PROD (approval) ----------
+- stage: Deploy_PROD
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+  jobs:
+  - deployment: ToPROD
+    pool: { name: Default }
+    environment: 'prod'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: app
+              path: '$(Pipeline.Workspace)'
+
+          - script: |
+              set -e
+              mkdir -p deploy
+              tar -xzf "$(Pipeline.Workspace)/dist.tar.gz" -C deploy
+
+              REL="/srv/portfolio-prod/releases/$(Build.BuildId)"
+              mkdir -p "$REL"
+              rsync -a deploy/ "$REL"/
+              ln -sfn "$REL" /srv/portfolio-prod/current
+
+              # only command needing sudo (NOPASSWD configured)
+              sudo -n systemctl restart portfolio-prod
+
+              # keep last 5 releases
+              cd /srv/portfolio-prod/releases
+              ls -1t | awk 'NR>5' | xargs -r rm -rf
+            displayName: Deploy to PROD (local server)
+
+# ---------- MIRROR TO GITHUB (full sync after successful build) ----------
+- stage: Mirror_GitHub
+  displayName: "Mirror Azure → GitHub"
+  dependsOn: Build
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - job: Mirror
+    displayName: "Push branches & tags to GitHub"
+    pool: { name: Default }
+    steps:
+    - checkout: self
+      fetchDepth: 0
+      persistCredentials: true
+
+    - script: |
+        set -euo pipefail
+
+        git config user.name  "$(GITHUB_USERNAME)"
+        git config user.email "ci@xarb.me"
+
+        # 1) Fetch ALL refs (branches + tags) from Azure (source of truth)
+        git -c http.extraHeader="Authorization: Bearer $(System.AccessToken)" \
+            fetch --prune --tags origin
+
+        # 2) Add/refresh GitHub remote (note: GitHub is case-insensitive but keep canonical casing)
+        git remote remove github 2>/dev/null || true
+        git remote add github "https://$(GITHUB_USERNAME):${GITHUB_TOKEN}@github.com/$(GITHUB_OWNER)/$(GITHUB_REPO).git"
+
+        # 3) Clean up any mistakenly-pushed remote-tracking refs on GitHub (refs/origin/*)
+        for r in $(git ls-remote --refs github | awk '{print $2}' | grep '^refs/origin/' || true); do
+          echo "Deleting stray $r on GitHub..."
+          git push github ":$r" || true
+        done
+
+        # 4) Push ALL origin branches → GitHub heads (map remotes → real branches)
+        echo "Pushing branches (origin/* → heads/*)…"
+        # list branch names under refs/remotes/origin/*, strip the prefix
+        while IFS= read -r BR; do
+          echo "  + $BR"
+          git push github "+refs/remotes/origin/${BR}:refs/heads/${BR}"
+        done < <(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin/)
+
+        # 5) Push tags
+        echo "Pushing tags…"
+        git push github +refs/tags/*:refs/tags/* --prune || true
+
+        echo "✅ Mirror complete. GitHub heads/tags now match Azure origin."
+      displayName: "Mirror branches & tags"
+      env:
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+    - script: |
+        set -euo pipefail
+        if command -v git-lfs >/dev/null 2>&1; then
+          echo "Mirroring Git LFS objects..."
+          git lfs fetch --all origin || true
+          git lfs push  --all github || true
+        else
+          echo "git-lfs not installed on the agent; skipping LFS mirror."
+        fi
+      displayName: "Mirror Git LFS (optional)"
+      condition: succeeded()
