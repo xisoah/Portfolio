@@ -162,35 +162,33 @@ stages:
         git config user.name  "$(GITHUB_USERNAME)"
         git config user.email "ci@xarb.me"
 
-        # Fetch everything from Azure (source of truth)
+        # 1) Fetch ALL refs (branches + tags) from Azure (source of truth)
         git -c http.extraHeader="Authorization: Bearer $(System.AccessToken)" \
             fetch --prune --tags origin
 
-        # Add/refresh GitHub remote
+        # 2) Add/refresh GitHub remote (note: GitHub is case-insensitive but keep canonical casing)
         git remote remove github 2>/dev/null || true
         git remote add github "https://$(GITHUB_USERNAME):${GITHUB_TOKEN}@github.com/$(GITHUB_OWNER)/$(GITHUB_REPO).git"
 
-        # ----- one-time cleanup: remove any mistakenly-pushed refs/origin/* on GitHub
+        # 3) Clean up any mistakenly-pushed remote-tracking refs on GitHub (refs/origin/*)
         for r in $(git ls-remote --refs github | awk '{print $2}' | grep '^refs/origin/' || true); do
           echo "Deleting stray $r on GitHub..."
           git push github ":$r" || true
         done
 
-        # If GitHub has no heads yet, seed with all heads + tags (no --mirror!)
-        if [ -z "$(git ls-remote --heads github)" ]; then
-          echo "Seeding empty GitHub with all branches and tags..."
-          # Push each local HEAD ref explicitly
-          git for-each-ref --format='%(refname)' refs/heads | while read ref; do
-            git push github "+$ref:$ref"
-          done
-          git push github +refs/tags/*:refs/tags/* || true
-        else
-          echo "Syncing all branches and tags (prune deleted)…"
-          git push github +refs/heads/*:refs/heads/* --prune
-          git push github +refs/tags/*:refs/tags/* --prune
-        fi
+        # 4) Push ALL origin branches → GitHub heads (map remotes → real branches)
+        echo "Pushing branches (origin/* → heads/*)…"
+        # list branch names under refs/remotes/origin/*, strip the prefix
+        while IFS= read -r BR; do
+          echo "  + $BR"
+          git push github "+refs/remotes/origin/${BR}:refs/heads/${BR}"
+        done < <(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin/)
 
-        echo "✅ Mirror complete. Azure and GitHub are now identical (heads/tags only)."
+        # 5) Push tags
+        echo "Pushing tags…"
+        git push github +refs/tags/*:refs/tags/* --prune || true
+
+        echo "✅ Mirror complete. GitHub heads/tags now match Azure origin."
       displayName: "Mirror branches & tags"
       env:
         GITHUB_TOKEN: $(GITHUB_TOKEN)
