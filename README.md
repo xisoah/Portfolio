@@ -1,18 +1,23 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Project Overview
+This portfolio project showcases a personal portfolio site built with Next.js and TypeScript. It includes sections for hero, projects, skills, education, and contact, designed to be responsive and accessible.
 
-## Getting Started
+Tech Stack
+- Next.js
+- React
+- TypeScript
+- ESLint
+- PostCSS
+- Geist font (via next/font)
+- Vercel deployment
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Local Development
+1. Install dependencies
+   - Use npm, yarn, pnpm, or bun (the repository includes scripts referencing bun)
+2. Run the development server:
+   - npm run dev
+   - yarn dev
+   - pnpm dev
+   - bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
@@ -20,17 +25,23 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+Build and Deployment
+- Build for production:
+  - npm run build
+  - yarn build
+- Deploy to Vercel or any hosting platform.
 
-To learn more about Next.js, take a look at the following resources:
+Project Structure
+- src/  - source code
+- public/ - static assets
+- PRD.MD
+- README.md
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Environment and CI
+- azure-pipelines.yml is configured for CI/CD.
+- Node.js version: see package.json engines (if available)
+- This project runs in a Next.js environment with Vercel font optimization.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Contributing
+- Contributions are welcome. Please open issues and submit pull requests.
+- See azure-pipelines.yml for CI details.
