@@ -51,7 +51,14 @@ export const SKILLS = {
     "Docker",
     "MySQL",
   ],
-  "DevSecOps & Automation": ["Terraform", "Jenkins", "Git", "CI/CD", "Boto3", "PyQT5"],
+  "DevSecOps & Automation": [
+    "Terraform",
+    "Jenkins",
+    "Git",
+    "CI/CD",
+    "Boto3",
+    "PyQT5",
+  ],
   "Programming & Platforms": [
     "Python",
     "PowerShell",
@@ -63,10 +70,27 @@ export const SKILLS = {
     "RHEL",
   ],
   "Machine Learning & Data": ["Scikit-learn", "TensorFlow", "Pandas"],
-  Tools: ["OCR (Tesseract)", "JADX", "Android Studio", "Checkmarx", "MobSF", "Postman"],
+  Tools: [
+    "OCR (Tesseract)",
+    "JADX",
+    "Android Studio",
+    "Checkmarx",
+    "MobSF",
+    "Postman",
+  ],
 };
 
 export const PROJECTS = [
+  {
+    title: "psGen: Encoded Payload Generator",
+    subtitle: "OOB Attack Payloads",
+    tech: ["Node.js", "PowerShell", "DNS exfiltration"],
+    description:
+      "Generates encoded PowerShell payloads supporting DNS-based data exfiltration for OOB testing workflows.",
+    link: "https://psGen.xarb.me",
+    github: "https://github.com/xisoah/psGen",
+    image: "/images/project-psgen.svg",
+  },
   {
     title: "Fraudulent ICO Detection System",
     subtitle: "MSc Dissertation",
@@ -74,16 +98,8 @@ export const PROJECTS = [
     description:
       "Analyzes ICO whitepapers using OCR and NLP to detect fraud signals; desktop UI built with Electron.js bridging Python via Eel.",
     link: "#",
+    github: "#",
     image: "/images/project-ico.svg",
-  },
-  {
-    title: "psGen: Encoded Payload Generator",
-    subtitle: "OOB Attack Payloads",
-    tech: ["Node.js", "PowerShell", "DNS exfiltration"],
-    description:
-      "Generates encoded PowerShell payloads supporting DNS-based data exfiltration for OOB testing workflows.",
-    link: "#",
-    image: "/images/project-psgen.svg",
   },
   {
     title: "ML-Based Intrusion Detection System",
@@ -92,6 +108,7 @@ export const PROJECTS = [
     description:
       "AI IDS using multiple models on CIC-IDS2017 with ~93% accuracy; includes feature selection pipeline and anomaly detection proposal.",
     link: "#",
+    github: "#",
     image: "/images/project-ids.svg",
   },
 ];
@@ -107,5 +124,3 @@ export const EDUCATION = [
     ],
   },
 ];
-
-
